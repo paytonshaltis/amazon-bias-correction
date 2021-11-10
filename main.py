@@ -18,9 +18,10 @@ import time
 # Short review AND unverified, foreign          - Drop score
 
 # Configurable constants to change scrape settings
-PRODUCT_URL = 'https://www.amazon.com/Bose-QuietComfort-Noise-Cancelling-Earbuds/dp/B08C4KWM9T/ref=sr_1_2?dchild=1&qid=1635902902&refinements=p_89%3ABose%2Cp_n_feature_four_browse-bin%3A12097501011&s=aht&sr=1-2'
-#PRODUCT_URL = 'https://www.amazon.com/dp/1736809504/ref=sspa_dk_detail_6?psc=1&pd_rd_i=1736809504&pd_rd_w=l2vJt&pf_rd_p=887084a2-5c34-4113-a4f8-b7947847c308&pd_rd_wg=CgNLk&pf_rd_r=EMPAR8EKSF4Z2F2GV8CQ&pd_rd_r=a137980c-1c04-44e6-b3bf-46aa1d7c6d54&spLa=ZW5jcnlwdGVkUXVhbGlmaWVyPUExS1VOM1U5MFJHQkpYJmVuY3J5cHRlZElkPUEwMzM5OTI1MUJIWTZLVVpWNjNRVCZlbmNyeXB0ZWRBZElkPUEwODk4MzQ4QUVLRlJFRllNSU5LJndpZGdldE5hbWU9c3BfZGV0YWlsJmFjdGlvbj1jbGlja1JlZGlyZWN0JmRvTm90TG9nQ2xpY2s9dHJ1ZQ=='
+#PRODUCT_URL = 'https://www.amazon.com/Bose-QuietComfort-Noise-Cancelling-Earbuds/dp/B08C4KWM9T/ref=sr_1_2?dchild=1&qid=1635902902&refinements=p_89%3ABose%2Cp_n_feature_four_browse-bin%3A12097501011&s=aht&sr=1-2'
+PRODUCT_URL = 'https://www.amazon.com/dp/1736809504/ref=sspa_dk_detail_6?psc=1&pd_rd_i=1736809504&pd_rd_w=l2vJt&pf_rd_p=887084a2-5c34-4113-a4f8-b7947847c308&pd_rd_wg=CgNLk&pf_rd_r=EMPAR8EKSF4Z2F2GV8CQ&pd_rd_r=a137980c-1c04-44e6-b3bf-46aa1d7c6d54&spLa=ZW5jcnlwdGVkUXVhbGlmaWVyPUExS1VOM1U5MFJHQkpYJmVuY3J5cHRlZElkPUEwMzM5OTI1MUJIWTZLVVpWNjNRVCZlbmNyeXB0ZWRBZElkPUEwODk4MzQ4QUVLRlJFRllNSU5LJndpZGdldE5hbWU9c3BfZGV0YWlsJmFjdGlvbj1jbGlja1JlZGlyZWN0JmRvTm90TG9nQ2xpY2s9dHJ1ZQ=='
 #PRODUCT_URL = 'https://www.amazon.com/Web-Design-HTML-JavaScript-jQuery/dp/1118907442/ref=cm_cr_arp_d_product_top?ie=UTF8'
+#PRODUCT_URL = 'https://www.amazon.com/MIXC-Bamboo-Multiple-Outdoor-Balcony/dp/B096FQFQ3F/ref=cm_cr_arp_d_product_top?ie=UTF8'
 MAX_REVIEW_PAGES = 400
 REVIEW_LENGTH = 100
 ACCEPTANCE_PERCENTAGE = 0.85
@@ -28,6 +29,8 @@ ACCEPTANCE_PERCENTAGE = 0.85
 # Gloabal variables used by multiple functions
 pages_checked = 0
 driver = None
+total_reviews = 0
+amazon_rating = 0
 
 # Arrays used to store the scraped data of interest.
 profile_links = []
@@ -47,15 +50,27 @@ vp_badges_back = []
 
 # Opens Chrome to the Amazon page for the product in PRODUCT_URL
 def open_amazon_product_link():
-    global driver
+    global driver, amazon_rating
     chrome_service = Service(executable_path='./chromedriver')
     driver = webdriver.Chrome(service=chrome_service)
     driver.get(PRODUCT_URL)
 
 # Navigates to the 'All Reviews' page for this product
 def show_all_reviews():
-    global driver
+    global driver, amazon_rating
     driver.find_element(By.XPATH, '//a[@data-hook="see-all-reviews-link-foot"]').click()
+    while True:
+        try:
+            amazon_rating = driver.find_element(By.XPATH, '//span[@data-hook="rating-out-of-text"]')
+            amazon_rating = amazon_rating.text
+            if amazon_rating[1] == '.':
+                amazon_rating = float(amazon_rating[0:3])
+            else:
+                amazon_rating = float(amazon_rating[0])
+            break
+        except (StaleElementReferenceException, NoSuchElementException) as e:
+            print('Rating not found. Retrying in 1 second...')
+            time.sleep(1)
 
 # Returns True or False depending on whether there are more elements on the page
 def check_more_elements(element: str) -> bool:
@@ -107,11 +122,6 @@ def store_all_reviews():
         # Important to wait before click to next page (random time from 1 - 2.8 seconds)
         pages_checked += 1
         time.sleep(rand.random() * 1.8 + 1)
-    
-    # 'No review' padding for the last page (rare)
-    for i in range(len(profile_links) - len(reviews)):
-        print('Padding blank reviews with \'None\'')
-        reviews.append(None)
 
     # Report the end of scraping review pages
     if(pages_checked == MAX_REVIEW_PAGES):
@@ -119,6 +129,10 @@ def store_all_reviews():
     else:
         store_current_page_data(True)
         print(f'Checked all {pages_checked + 1} pages for this product!')
+
+    # 'No review' padding for the last page (rare)
+    for i in range(len(profile_links) - len(reviews)):
+        reviews.append(None)
 
 # Stores 3 parts of each review: (1) link to user's profile, (2) user's
 # product rating, (3) user's product review
@@ -179,8 +193,7 @@ def store_current_page_data(last_page: bool):
                 # a 'None' value so that the arrays remain the same length
                 if not last_page:
                     for i in range(10 - num_reviews):
-                        print('Padding blank reviews with \'None\'')
-                        reviews.append('')                    
+                        reviews.append(None)                    
                 reviews_back.clear()
                 break
             except StaleElementReferenceException:
@@ -204,12 +217,6 @@ def store_current_page_data(last_page: bool):
                 vp_badges = vp_badges_back[:]
                 time.sleep(1)
 
-        # DEBUGGING: print the length of all arrays
-        print(len(profile_links))
-        print(len(ratings))
-        print(len(reviews))
-        print(len(vp_badges))
-
 # Determine which profiles should be investigated further
 def determine_profiles_to_investigate():
     global profile_links
@@ -224,7 +231,6 @@ def determine_profiles_to_investigate():
         else:
             check_profile.append(True)
             trusted_profiles.append(False)
-            print(f'Review number {i}')
 
 # Returns the integer rating from a string
 def get_int_rating(rating: str):
@@ -252,7 +258,6 @@ def investigate_profile(link: str):
                     num_reviews += 1
 
                 # Determine if we will trust the profile
-                print(num_reviews, one_star_reviews, five_star_reviews)
                 return not ((one_star_reviews / num_reviews > ACCEPTANCE_PERCENTAGE) or (five_star_reviews / num_reviews > ACCEPTANCE_PERCENTAGE))
 
             except StaleElementReferenceException:
@@ -274,11 +279,6 @@ open_amazon_product_link()
 show_all_reviews()
 store_all_reviews()
 determine_profiles_to_investigate()
-verify_profiles()
-# print(f'Got {len(profile_links)} links!\n', profile_links)
-# print(f'Got {len(ratings)} ratings!\n', ratings)
-# print(f'Got {len(reviews)} reviews!\n', reviews)
-# print(f'Got {len(vp_badges)} badges!\n', vp_badges)
 
 # Count and display the links that should be investigated
 count = 0
@@ -286,9 +286,18 @@ for i in range(len(profile_links)):
     if not profile_links[i] and check_profile[i]:
         count += 1
 print(f'The number of profiles to check is {check_profile.count(True)}')
-print(f'Out of these, {count} don\'t have links and should be thrown away.')
+print(f'Out of these, {count} don\'t have links and will not be included in the unbiased average.')
+verify_profiles()
+
+# Tally up the total number of reviews
+total_reviews = trusted_profiles.count(True)
+
+total_stars = 0.0
+for i in range(len(trusted_profiles)):
+    if trusted_profiles[i]:
+        total_stars += get_int_rating(ratings[i])
 
 driver.close()
 
-# a-icon a-icon-star a-star-4 review-rating
-# a-icon a-icon-star a-star-2 profile-at-review-stars
+print('Amazon\'s Average Rating:', str(round(amazon_rating, 1)) + '0')
+print('Unbiased Average Rating:', round(total_stars / total_reviews, 2))
