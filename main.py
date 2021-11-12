@@ -19,12 +19,8 @@ import time
 
 # Configurable constants to change scrape settings
 PRODUCT_URL = 'https://www.amazon.com/Bose-QuietComfort-Noise-Cancelling-Earbuds/dp/B08C4KWM9T/ref=sr_1_2?dchild=1&qid=1635902902&refinements=p_89%3ABose%2Cp_n_feature_four_browse-bin%3A12097501011&s=aht&sr=1-2'
-#PRODUCT_URL = 'https://www.amazon.com/dp/1736809504/ref=sspa_dk_detail_6?psc=1&pd_rd_i=1736809504&pd_rd_w=l2vJt&pf_rd_p=887084a2-5c34-4113-a4f8-b7947847c308&pd_rd_wg=CgNLk&pf_rd_r=EMPAR8EKSF4Z2F2GV8CQ&pd_rd_r=a137980c-1c04-44e6-b3bf-46aa1d7c6d54&spLa=ZW5jcnlwdGVkUXVhbGlmaWVyPUExS1VOM1U5MFJHQkpYJmVuY3J5cHRlZElkPUEwMzM5OTI1MUJIWTZLVVpWNjNRVCZlbmNyeXB0ZWRBZElkPUEwODk4MzQ4QUVLRlJFRllNSU5LJndpZGdldE5hbWU9c3BfZGV0YWlsJmFjdGlvbj1jbGlja1JlZGlyZWN0JmRvTm90TG9nQ2xpY2s9dHJ1ZQ=='
-#PRODUCT_URL = 'https://www.amazon.com/Web-Design-HTML-JavaScript-jQuery/dp/1118907442/ref=cm_cr_arp_d_product_top?ie=UTF8'
-#PRODUCT_URL = 'https://www.amazon.com/MIXC-Bamboo-Multiple-Outdoor-Balcony/dp/B096FQFQ3F/ref=cm_cr_arp_d_product_top?ie=UTF8'
-#PRODUCT_URL = 'https://www.amazon.com/Lug-Womens-Trolley-Cosmetic-Bloom/dp/B087NKFQB7/?_encoding=UTF8&pd_rd_w=EorSw&pf_rd_p=8b894231-4b84-44da-9446-c27cf0e8abc2&pf_rd_r=WZNKXNMVTVQZZPV6K79G&pd_rd_r=afe07fde-25b8-44dd-97b5-bb7911ab9913&pd_rd_wg=rU5X4&ref_=pd_gw_ci_mcx_mr_hp_d'
-MAX_REVIEW_PAGES = 400
-REVIEW_LENGTH = 100
+MAX_REVIEW_PAGES = 20
+REVIEW_LENGTH = 9999
 ACCEPTANCE_PERCENTAGE = 0.85
 
 # Gloabal variables used by multiple functions
@@ -60,7 +56,11 @@ def open_amazon_product_link():
 def show_all_reviews():
     global driver, amazon_rating
     driver.find_element(By.XPATH, '//a[@data-hook="see-all-reviews-link-foot"]').click()
+    
+    # Need to locate and store Amazon's average rating for comparison
     while True:
+        
+        # Try locating the 'rating-out-of-text' attribute using Xpath
         try:
             amazon_rating = driver.find_element(By.XPATH, '//span[@data-hook="rating-out-of-text"]')
             amazon_rating = amazon_rating.text
@@ -69,6 +69,8 @@ def show_all_reviews():
             else:
                 amazon_rating = float(amazon_rating[0])
             break
+        
+        # Continue to retry finding Amazon's average rating
         except (StaleElementReferenceException, NoSuchElementException) as e:
             print('Rating not found. Retrying in 1 second...')
             time.sleep(1)
@@ -246,8 +248,14 @@ def investigate_profile(link: str):
     num_reviews = 0.0
     one_star_reviews = 0
     five_star_reviews = 0
+    
+    # Each profile is given 3 chances to load its reviews before we assume there aren't any
     if check_more_elements('//div[@class="desktop card profile-at-card profile-at-review-box"]'):
+        
+        # If we determine that there are reviews...
         while True:
+            
+            # Continuously try to scrape the necessary data from the user's profile
             try:
                 data = driver.find_elements(By.XPATH, '//div[@class="desktop card profile-at-card profile-at-review-box"]//i[contains(@class, "profile")]')
                 for value in data:
@@ -261,6 +269,7 @@ def investigate_profile(link: str):
                 # Determine if we will trust the profile
                 return not ((one_star_reviews / num_reviews > ACCEPTANCE_PERCENTAGE) or (five_star_reviews / num_reviews > ACCEPTANCE_PERCENTAGE))
 
+            # Retry the call to 'find_elements()' if an exception is thrown
             except StaleElementReferenceException:
                 print('Stale element: user review block. Retrying in 1 second...')
                 time.sleep(1)
@@ -275,7 +284,8 @@ def verify_profiles():
             print(trusted_profiles[i])
             time.sleep(rand.random() * 1.8 + 1)
 
-
+# EXECUTION BEGINS HERE
+#######################
 open_amazon_product_link()
 show_all_reviews()
 store_all_reviews()
@@ -290,18 +300,23 @@ print('**********')
 print(f'The number of profiles to check is {check_profile.count(True)}')
 print(f'Of these, {count} don\'t have links and will be excluded from the unbiased average.')
 print('**********')
+
+# Investigate profiles that need further bias checking
 verify_profiles()
 
-# Tally up the total number of reviews
+# Tally up the total number of reviews for this product
 total_reviews = trusted_profiles.count(True)
 
+# Tally up the total number of stars for this product
 total_stars = 0.0
 for i in range(len(trusted_profiles)):
     if trusted_profiles[i]:
         total_stars += get_int_rating(ratings[i])
 
+# Close the Selenium webdriver, we are done scraping
 driver.close()
 
+# Print the results and statistics of the Bias Determination Algorithm
 print('\n\nRESULTS:')
 print('Amazon\'s Average Rating:', str(round(amazon_rating, 1)) + '0')
 print('Unbiased Average Rating:', round(total_stars / total_reviews, 2))
